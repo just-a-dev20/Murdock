@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### No more stale speaker after Home Assistant restarts
+
+The JSON recognition event on `murdock/event/recognition` was published
+retained. The broker hands a retained message to every new subscriber, so
+each time Home Assistant restarted or its MQTT connection came back, the
+integration received the last recognition again — possibly hours old —
+and stored it as if it had just happened. Within the freshness window
+the conversation agent was then told that speaker, possibly an admin,
+was talking.
+
+The event is no longer retained (the sensor states still are), a
+retained copy left on the broker by an older version is removed when
+Murdock connects, and the integration ignores retained events.
+
 ### Cloud engines hear the whole utterance
 
 The buffered engines — OpenAI-compatible, Voxtral, Home Assistant Cloud —

@@ -15,7 +15,7 @@ Topic layout (prefix defaults to ``murdock``)::
     murdock/status                              online | offline (LWT)
     murdock/sensor/<name>/state                 published recognition state
     murdock/binary_sensor/<name>/state          published recognition state
-    murdock/event/recognition                   full JSON event
+    murdock/event/recognition                   full JSON event (NOT retained)
     murdock/context/<room>/tv                    HA → {"playing": true}   (retained)
     murdock/context/<room>/presence              HA → {"present": true}   (retained)
     murdock/context/global/tv                    fallback when no room match
@@ -28,6 +28,13 @@ Architecture:
     - Reconnect loop handles transient broker outages with backoff. All
       context topics are retained, so Murdock pulls the last known state
       immediately on (re)connect — never blind after a restart.
+    - The recognition *event* is the one thing never retained. A retained
+      message is replayed to every new subscriber — Home Assistant
+      starting, or its MQTT client reconnecting — and a replayed event
+      reads as a recognition that just happened, so the agent would be
+      told a speaker from minutes or days ago is talking. Versions up to
+      0.13.0 did retain it; a copy they left on the broker is cleared on
+      connect (see ``_clear_stale_event``).
 """
 
 from __future__ import annotations
@@ -236,13 +243,24 @@ class MQTTClient:
                     # …and the active-satellite signal (which device is
                     # currently running a pipeline).
                     await client.subscribe(f"{self.topic_prefix}/active_satellite")
+                    # …and, until its first message, our own event topic:
+                    # a retained copy left by an older version arrives
+                    # right away and is cleared (see _clear_stale_event).
+                    event_topic = self.event_topic
+                    await client.subscribe(event_topic)
+                    event_checked = False
 
                     # Inbound pump: blocks until the connection drops or
                     # the task is cancelled on stop().
                     active_topic = f"{self.topic_prefix}/active_satellite"
                     async for message in client.messages:
-                        if str(message.topic) == active_topic:
+                        topic = str(message.topic)
+                        if topic == active_topic:
                             self._handle_active_satellite(message)
+                        elif topic == event_topic:
+                            if not event_checked:
+                                event_checked = True
+                                await self._clear_stale_event(client, message)
                         else:
                             self._handle_context_message(message)
 
@@ -266,6 +284,38 @@ class MQTTClient:
 
         self._connected = False
         self._client = None
+
+    @property
+    def event_topic(self) -> str:
+        """Topic of the JSON recognition event."""
+        return f"{self.topic_prefix}/event/recognition"
+
+    async def _clear_stale_event(self, client, message) -> None:
+        """Delete a recognition event an older version left retained.
+
+        Called with the first message on the event topic after connecting.
+        If it is retained, it is a leftover — this version never retains
+        the event — and Home Assistant would replay it on its next restart
+        as a fresh recognition. Publishing an empty retained payload
+        removes it from the broker. Otherwise the message is simply our own
+        latest event coming back. Either way the topic is then
+        unsubscribed, so Murdock does not keep reading its own events.
+
+        Only clearing when a leftover is actually there keeps subscribers
+        from seeing an empty message on every reconnect.
+        """
+        topic = str(message.topic)
+        try:
+            if getattr(message, "retain", False) and message.payload:
+                await client.publish(topic, b"", qos=1, retain=True)
+                _LOGGER.info(
+                    "Cleared a stale retained recognition event from %s — "
+                    "Home Assistant would have replayed it as a new "
+                    "recognition on its next restart", topic,
+                )
+            await client.unsubscribe(topic)
+        except Exception as exc:
+            _LOGGER.debug("Stale event check on %s failed: %s", topic, exc)
 
     # ------------------------------------------------------------------
     # Inbound context handling
@@ -617,12 +667,19 @@ class MQTTClient:
     # State publishing
     # ------------------------------------------------------------------
 
-    async def _publish_state(self, topic: str, value: str) -> None:
-        """Publish a single state value. Swallows errors."""
+    async def _publish_state(
+        self, topic: str, value: str, retain: bool = True
+    ) -> None:
+        """Publish a single value, retained unless told otherwise.
+
+        Swallows errors. States are retained so HA's entities show the
+        last value after a restart; the recognition event must not be
+        (see the module docstring).
+        """
         if not self._connected or self._client is None:
             return
         try:
-            await self._client.publish(topic, value, qos=0, retain=True)
+            await self._client.publish(topic, value, qos=0, retain=retain)
         except Exception as exc:
             _LOGGER.debug("MQTT publish failed for %s: %s", topic, exc)
 
@@ -717,8 +774,11 @@ class MQTTClient:
             speakers=speakers,
         )
 
+        # An event, not a state: never retained. A retained copy would be
+        # replayed to Home Assistant on its next restart or reconnect and
+        # taken for a recognition that just happened.
         await self._publish_state(
-            f"{prefix}/event/recognition", json.dumps(event_payload)
+            self.event_topic, json.dumps(event_payload), retain=False
         )
 
     def publish_async(self, coro) -> None:

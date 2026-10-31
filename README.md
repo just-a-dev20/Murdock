@@ -218,11 +218,17 @@ configured **in the Web UI** (Settings tab) — no `.env` file required.
 | `murdock/status` | Murdock → HA | `online` / `offline` (LWT, retained) |
 | `murdock/sensor/<name>/state` | Murdock → HA | recognition state (retained) |
 | `murdock/binary_sensor/speaker_recognized/state` | Murdock → HA | `ON` / `OFF` |
-| `murdock/event/recognition` | Murdock → HA | full JSON event |
+| `murdock/event/recognition` | Murdock → HA | full JSON event (**not** retained) |
 | `murdock/active_satellite` | HA → Murdock | `{"id": "...", "area": "..."}` (or bare id) |
 | `murdock/context/media/<entity_id>` | HA → Murdock | `{"playing": true, "area": "..."}` (retain!) |
 | `murdock/context/<room>/tv` | HA → Murdock | `{"playing": true}` (retain!, legacy single-TV) |
 | `murdock/context/<room>/presence` | HA → Murdock | `{"present": true}` (retain!) |
+
+The recognition event is deliberately not retained: a retained copy would
+be replayed to Home Assistant on every restart or MQTT reconnect and read
+as a recognition that just happened. Murdock removes a copy left on the
+broker by 0.13.0 and earlier when it connects, and the integration
+ignores retained events.
 
 Inbound context topics **must** be published with `retain: true` so
 Murdock pulls the last known state immediately on (re)connect instead of

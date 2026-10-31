@@ -182,3 +182,28 @@ async def test_an_unreachable_internal_address_is_left_alone(hass: HomeAssistant
     await coordinator._async_health_poll()
     await hass.async_block_till_done()
     assert entry.data["base_url"] == OLD_URL
+
+
+async def test_a_retained_recognition_is_not_taken_for_a_new_one(
+    hass: HomeAssistant, aioclient_mock
+):
+    """HA restarting replays the broker's retained copy; that is old news."""
+    import json
+    from types import SimpleNamespace
+
+    _mock_proxy(aioclient_mock, OLD_URL)
+    coordinator = await _setup(hass, _entry())
+    payload = json.dumps(
+        {"satellite_id": "wz", "speaker": "Jonas", "is_known": True,
+         "role": "admin", "timestamp": 1}
+    )
+    coordinator._handle_mqtt_message(SimpleNamespace(
+        topic="murdock/event/recognition", payload=payload, retain=True,
+    ))
+    assert coordinator.state_for_satellite("wz") is None
+
+    coordinator._handle_mqtt_message(SimpleNamespace(
+        topic="murdock/event/recognition", payload=payload, retain=False,
+    ))
+    state = coordinator.state_for_satellite("wz")
+    assert state is not None and state.speaker == "Jonas"

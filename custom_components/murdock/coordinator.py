@@ -15,7 +15,8 @@ are consumed here:
   explicitly or the integration sees nothing at all.
 
 Both carry the identical payload, and duplicates (someone running both)
-are dropped by (satellite, timestamp).
+are dropped by (satellite, timestamp). Retained MQTT messages are
+ignored: they are replays of an old recognition, not a new one.
 """
 
 from __future__ import annotations
@@ -355,6 +356,16 @@ class MurdockCoordinator:
     @callback
     def _handle_mqtt_message(self, msg) -> None:
         """Recognition from Murdock's MQTT topic (token-free path)."""
+        if getattr(msg, "retain", False):
+            # The broker replays a retained message to every new
+            # subscription — Home Assistant starting, or its MQTT client
+            # reconnecting. That is a recognition from whenever it was
+            # published, not now; applying it stamped it with the current
+            # time and told the agent an old speaker (possibly an admin)
+            # was talking. Murdock up to 0.13.0 retained the event; newer
+            # versions don't, and clear a leftover copy on connect.
+            _LOGGER.debug("Ignoring retained recognition on %s", msg.topic)
+            return
         try:
             data = json.loads(msg.payload)
         except (TypeError, ValueError):
