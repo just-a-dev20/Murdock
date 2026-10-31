@@ -1058,6 +1058,14 @@ class MurdockHandler(AsyncEventHandler):
                 result.target_speaker, result.dropped_seconds,
             )
             return result.audio
+        if getattr(result, "declined_minority", False):
+            # The transcript covers the whole clip, so a speaker who said
+            # only a sliver of it must not be verified on that sliver.
+            _LOGGER.info(
+                "[%s] EXTRACTION declined: %s spoke only %.0f%% of the "
+                "speech — verifying the whole clip",
+                sid, result.target_speaker, (result.target_share or 0.0) * 100,
+            )
         return verify_audio
 
     async def _wait_for_upstream_transcript(self, timeout: float = 15.0) -> str:

@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Extraction can't be used to slip a command past the gate
+
+Speaker extraction keeps only the dominant enrolled voice's speech for
+the verify gate, but the transcript always covers the whole clip. So an
+enrolled user saying one short word ("yes") next to an unknown voice's
+command got the command through the gate — and to the agent — under that
+user's name. Extraction now only narrows the clip when the matched speaker
+said more than half of the detected speech; otherwise the clip is judged
+as a whole, exactly as with extraction switched off. The log says when
+this happens ("EXTRACTION declined: … spoke only 23% of the speech").
+
 ## 0.13.0
 
 ### A slow main no longer costs the turn
