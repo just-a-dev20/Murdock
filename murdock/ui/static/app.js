@@ -29,8 +29,15 @@ function apiUrl(path) {
     return path;
 }
 
+// Sent with every request. A browser signed in by cookie needs it for
+// anything that changes state: a page on another origin can't add a
+// custom header without a CORS preflight, and Murdock answers none.
+const UI_HEADERS = { "X-Murdock-UI": "1" };
+
 async function api(path, options = {}) {
-    const res = await fetch(apiUrl(path), options);
+    const headers = { ...UI_HEADERS, ...(options.headers || {}) };
+    const res = await fetch(apiUrl(path), { ...options, headers });
+    if (res.status === 401 && !path.startsWith("/api/auth/")) showLogin();
     if (!res.ok) {
         let detail = res.statusText;
         try {
@@ -1038,6 +1045,7 @@ function renderLangHint(s) {
 }
 
 async function loadSettings() {
+    loadApiAccess();
     try {
         const s = await api("/api/settings");
         const form = $("#settings-form");
@@ -2510,6 +2518,95 @@ $("#ha-copy-template").addEventListener("click", async () => {
         fb.className = "feedback ok";
         setTimeout(() => { fb.textContent = ""; fb.className = ""; }, 2000);
     }
+});
+
+// --- Sign-in & API access --------------------------------------------------
+//
+// Under Home Assistant ingress the Supervisor has already signed in an
+// admin, so none of this appears. On direct port access the API answers
+// 401 until the token has been entered once; the server then sets an
+// HttpOnly session cookie, which also covers <audio> and the backup
+// download (they can't send headers).
+
+function showLogin() {
+    if (document.body.classList.contains("auth-required")) return;
+    document.body.classList.add("auth-required");
+    $("#login-card").hidden = false;
+    $("#login-token").focus();
+}
+
+$("#login-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const fb = $("#login-feedback");
+    fb.innerHTML = "";
+    try {
+        await api("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: $("#login-token").value.trim() }),
+        });
+        window.location.reload();
+    } catch {
+        fb.innerHTML = `<span class="feedback err">${escapeHtml(t("auth.login_failed"))}</span>`;
+    }
+});
+
+async function loadApiAccess() {
+    try {
+        const [tok, status] = await Promise.all([
+            api("/api/auth/token"),
+            api("/api/auth/status"),
+        ]);
+        $("#api-token-value").value = tok.token;
+        $("#api-token-pinned").hidden = !tok.pinned;
+        $("#api-token-rotate").hidden = !!tok.pinned;
+        $("#api-logout").hidden = status.via !== "session";
+    } catch (err) {
+        $("#api-token-feedback").innerHTML =
+            `<span class="feedback err">${escapeHtml(t("generic.error", { err: err.message }))}</span>`;
+    }
+}
+
+$("#api-token-reveal").addEventListener("click", () => {
+    const input = $("#api-token-value");
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    $("#api-token-reveal").textContent = t(show ? "auth.hide" : "auth.reveal");
+});
+
+$("#api-token-copy").addEventListener("click", async () => {
+    const value = $("#api-token-value").value;
+    try {
+        await navigator.clipboard.writeText(value);
+    } catch {
+        // No clipboard API outside HTTPS: copy through a selection.
+        const ta = document.createElement("textarea");
+        ta.value = value;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+    }
+    const fb = $("#api-token-feedback");
+    fb.innerHTML = `<span class="feedback ok">${escapeHtml(t("auth.copied"))}</span>`;
+    setTimeout(() => { fb.innerHTML = ""; }, 2000);
+});
+
+$("#api-token-rotate").addEventListener("click", async () => {
+    if (!confirm(t("auth.confirm_rotate"))) return;
+    const fb = $("#api-token-feedback");
+    try {
+        const tok = await api("/api/auth/token/rotate", { method: "POST" });
+        $("#api-token-value").value = tok.token;
+        fb.innerHTML = `<span class="feedback ok">${escapeHtml(t("auth.rotated"))}</span>`;
+    } catch (err) {
+        fb.innerHTML = `<span class="feedback err">${escapeHtml(t("generic.error", { err: err.message }))}</span>`;
+    }
+});
+
+$("#api-logout").addEventListener("click", async () => {
+    await api("/api/auth/logout", { method: "POST" }).catch(() => {});
+    window.location.reload();
 });
 
 // --- Backup & Restore -----------------------------------------------------

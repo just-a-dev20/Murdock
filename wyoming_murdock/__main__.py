@@ -29,6 +29,11 @@ async def _run_web_ui(app, host: str, port: int) -> None:
         # reuse a socket the server had just closed and get "connection
         # reset by peer" — the integration's flapping connection sensor.
         timeout_keep_alive=75,
+        # Murdock is reached directly (or through HA ingress, which needs
+        # no forwarded headers). Never let an X-Forwarded-For header
+        # stand in for the client address: the auth check trusts the
+        # ingress proxy by its address.
+        proxy_headers=False,
     )
     server = uvicorn.Server(config)
     await server.serve()

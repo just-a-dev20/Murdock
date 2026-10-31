@@ -34,7 +34,9 @@ port `8099`, then restart the add-on. Ingress alone is not enough.
 
 1. Restart Home Assistant.
 2. *Settings → Devices & Services → Add integration → Murdock*, enter
-   `http://<ha-host>:8099`.
+   `http://<ha-host>:8099` and the **API token** shown in Murdock's web UI
+   under *Settings → Home Assistant → API access* (needed from Murdock
+   0.14; older entries ask for it with a re-authenticate prompt).
 3. Map each Murdock satellite ID to its `assist_satellite` entity.
 4. Enable the API under *Settings → Voice assistants → your agent → LLM
    APIs → Murdock*.

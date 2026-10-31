@@ -37,6 +37,10 @@ services:
       - LISTEN_URI=tcp://0.0.0.0:10350
       - WEB_HOST=0.0.0.0
       - WEB_PORT=8099
+      # Web UI/API token. Empty: generated on first start and kept in
+      # the data volume (api_token); the UI shows it under
+      # Settings → Home Assistant → API access.
+      - API_TOKEN=${API_TOKEN:-}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       # Comma-separated: "de,en". Leave empty for auto-detect from upstream.
       - ADVERTISED_LANGUAGES=${ADVERTISED_LANGUAGES:-}

@@ -34,7 +34,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.util import dt as dt_util
 
-from .api import MurdockApiClient, MurdockApiError
+from .api import MurdockApiClient, MurdockApiError, MurdockAuthError
 from .const import (
     CONF_BASE_URL,
     CONF_FRESHNESS_WINDOW,
@@ -134,6 +134,9 @@ class MurdockCoordinator:
         self.addon_slug: str | None = None
         # Device registry id of the proxy device, parent of the satellites.
         self.proxy_device_id: str | None = None
+        # Set once Murdock refused the token, so the reauth prompt and its
+        # warning appear once rather than on every poll.
+        self.auth_failed: bool = False
 
     @property
     def id_prefix(self) -> str:
@@ -235,7 +238,10 @@ class MurdockCoordinator:
             rows = await self.api.get_state()
             self.available = True
         except MurdockApiError as exc:
-            _LOGGER.warning("Murdock initial sync failed: %s", exc)
+            if isinstance(exc, MurdockAuthError):
+                self._async_auth_failed(exc)
+            else:
+                _LOGGER.warning("Murdock initial sync failed: %s", exc)
             self.available = False
             async_dispatcher_send(self.hass, SIGNAL_SPEAKER_UPDATE, None)
             return
@@ -266,6 +272,8 @@ class MurdockCoordinator:
         try:
             info = await self.api.get_version_info()
         except MurdockApiError as exc:
+            if isinstance(exc, MurdockAuthError):
+                self._async_auth_failed(exc)
             self._failures += 1
             if self._heard_recently():
                 # A recognition just arrived over MQTT or the event bus:
@@ -287,6 +295,7 @@ class MurdockCoordinator:
             if self._failures and not self.available:
                 _LOGGER.info("Murdock reachable again at %s", self.api.base_url)
             self._failures = 0
+            self.auth_failed = False
             self.available = True
             self.proxy_version = str(info.get("version", "")) or self.proxy_version
             self.addon_slug = info.get("addon_slug") or self.addon_slug
@@ -294,6 +303,26 @@ class MurdockCoordinator:
             await self._async_prefer_internal_url(info)
         if was_available != self.available:
             async_dispatcher_send(self.hass, SIGNAL_SPEAKER_UPDATE, None)
+
+    @callback
+    def _async_auth_failed(self, exc: MurdockAuthError) -> None:
+        """Murdock answered but refused the token: ask the user for it.
+
+        The entry stays loaded — recognitions over MQTT need no token and
+        keep arriving — while Home Assistant shows a re-authenticate
+        prompt. Raised by Murdock 0.14+ for entries set up without a
+        token, or after the token was rotated.
+        """
+        if self.auth_failed:
+            return
+        self.auth_failed = True
+        _LOGGER.warning(
+            "Murdock at %s refused the API token (%s). Copy the token from "
+            "Murdock's web UI — Settings → Home Assistant → API access — "
+            "into the re-authentication prompt",
+            self.api.base_url, exc,
+        )
+        self.entry.async_start_reauth(self.hass)
 
     def _heard_recently(self) -> bool:
         if self.last_event_at is None:

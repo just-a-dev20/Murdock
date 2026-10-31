@@ -180,6 +180,27 @@ def options_flow_shape():
 check("OptionsFlow.config_entry property + async_show_menu", options_flow_shape)
 
 
+def reauth_and_token_field():
+    """Murdock 0.14+ refuses a missing/wrong token: the entry asks again."""
+    from homeassistant.config_entries import ConfigEntries, ConfigEntry
+    from homeassistant.helpers.selector import TextSelectorConfig, TextSelectorType
+    for name in ("async_start_reauth",):
+        if not hasattr(ConfigEntry, name):
+            raise AttributeError(f"ConfigEntry lacks {name}")
+    for name in ("async_get_entry", "async_update_entry", "async_reload"):
+        if not hasattr(ConfigEntries, name):
+            raise AttributeError(f"ConfigEntries lacks {name}")
+    TextSelectorConfig(type=TextSelectorType.PASSWORD)
+    from custom_components.murdock.config_flow import MurdockConfigFlow
+    for step in ("async_step_reauth", "async_step_reauth_confirm"):
+        if not hasattr(MurdockConfigFlow, step):
+            raise AttributeError(f"config flow lacks {step}")
+    return None
+
+
+check("reauth flow + password token field", reauth_and_token_field)
+
+
 def sensor_classes():
     from homeassistant.components.sensor import SensorDeviceClass
     from homeassistant.components.binary_sensor import BinarySensorDeviceClass

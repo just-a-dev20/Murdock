@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # Web UI
     web_host: str = Field(default="0.0.0.0")
     web_port: int = Field(default=8099)
+    # Pins the web API token (env API_TOKEN). Empty: a random token is
+    # generated on first start and kept in <data_dir>/api_token. See
+    # murdock/api/auth.py.
+    api_token: Optional[str] = Field(default=None)
 
     # Paths
     data_dir: Path = Field(default=Path("/app/data"))

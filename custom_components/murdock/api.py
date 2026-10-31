@@ -25,6 +25,14 @@ class MurdockApiError(Exception):
     """Raised when the proxy is unreachable or answers with an error."""
 
 
+class MurdockAuthError(MurdockApiError):
+    """The proxy answered, but refused the token (missing or wrong).
+
+    Murdock 0.14 and later require the API token shown in its web UI
+    under Settings → Home Assistant → API access.
+    """
+
+
 class MurdockApiClient:
     """Client against Murdock's REST API."""
 
@@ -52,6 +60,11 @@ class MurdockApiClient:
                 async with self._session.request(
                     method, url, json=json, headers=headers, timeout=_TIMEOUT
                 ) as resp:
+                    if resp.status in (401, 403):
+                        body = (await resp.text())[:200]
+                        raise MurdockAuthError(
+                            f"{method} {url} → {resp.status}: {body}"
+                        )
                     if resp.status >= 400:
                         body = (await resp.text())[:200]
                         raise MurdockApiError(

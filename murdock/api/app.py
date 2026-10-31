@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from murdock import __version__
 from murdock.core.context import AppContext
 
+from .auth import ApiAuth, AuthMiddleware
+from .routes_auth import router as auth_router
 from .routes_backup import router as backup_router
 from .routes_integration import router as integration_router
 from .routes_stt_services import router as stt_services_router
@@ -27,22 +29,29 @@ _LOGGER = logging.getLogger("murdock.api")
 _STATIC_DIR = Path(__file__).parent.parent / "ui" / "static"
 
 
-def create_app(context: AppContext) -> FastAPI:
-    """Build the FastAPI application bound to an :class:`AppContext`."""
+def create_app(context: AppContext, auth: Optional[ApiAuth] = None) -> FastAPI:
+    """Build the FastAPI application bound to an :class:`AppContext`.
+
+    ``auth`` defaults to the token kept in the data directory (see
+    :mod:`murdock.api.auth`); tests pass their own.
+    """
     app = FastAPI(
         title="Murdock",
         description="Speaker recognition proxy for Home Assistant",
         version=__version__,
     )
     app.state.context = context
+    app.state.auth = auth or ApiAuth.from_settings(context.settings)
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # Every request outside a short public list needs ingress, the API
+    # token or a signed-in browser. There is deliberately no CORS
+    # middleware: the UI is served from this same origin and the Home
+    # Assistant integration talks server to server, so nothing needs it —
+    # and the wildcard that used to be here let any web page read the
+    # API's answers, the backup and its secrets included.
+    app.add_middleware(AuthMiddleware, auth=app.state.auth)
 
+    app.include_router(auth_router)
     app.include_router(status_router)
     app.include_router(speakers_router)
     app.include_router(unknown_router)
