@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Cloud engines hear the whole utterance
+
+The buffered engines — OpenAI-compatible, Voxtral, Home Assistant Cloud —
+were given the speaker embedder's copy of the audio: the first second cut
+off (the chime trim, *Skip leading seconds*) and, with speaker extraction
+on, every speech region extraction dropped. Words at the start, and short
+words between pauses, went missing from the transcript. The trim and
+extraction now apply to the embedding only; transcripts and shadow
+comparisons get what the microphone sent. The streaming Wyoming path was
+not affected.
+
 ### Extraction can't be used to slip a command past the gate
 
 Speaker extraction keeps only the dominant enrolled voice's speech for
