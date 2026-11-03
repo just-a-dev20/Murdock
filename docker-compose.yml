@@ -29,8 +29,7 @@ services:
       - MISTRAL_MODEL=${MISTRAL_MODEL:-voxtral-mini-latest}
       - WEB_HOST=0.0.0.0
       - WEB_PORT=8099
-      # The web UI/API needs a token. Generated on first start into
-      # ./data/api_token (cat it to sign in); set this to pin your own.
+      # Web UI/API token. Generated into ./data/api_token if unset.
       # - API_TOKEN=
       - LOG_LEVEL=info
       # MQTT (recommended HA integration). Uncomment + set your broker to

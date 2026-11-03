@@ -181,7 +181,7 @@ check("OptionsFlow.config_entry property + async_show_menu", options_flow_shape)
 
 
 def reauth_and_token_field():
-    """Murdock 0.14+ refuses a missing/wrong token: the entry asks again."""
+    """Reauth flow and masked token field."""
     from homeassistant.config_entries import ConfigEntries, ConfigEntry
     from homeassistant.helpers.selector import TextSelectorConfig, TextSelectorType
     for name in ("async_start_reauth",):
@@ -230,7 +230,6 @@ def mqtt_subscribe_api():
     if not inspect.iscoroutinefunction(mqtt.async_subscribe):
         raise TypeError("async_subscribe is not awaitable")
     from homeassistant.components.mqtt.models import ReceiveMessage
-    # ``retain`` tells a replayed old recognition from a new one.
     for f in ("topic", "payload", "retain"):
         if f not in ReceiveMessage.__dataclass_fields__:
             raise AttributeError(f"ReceiveMessage lacks {f}")

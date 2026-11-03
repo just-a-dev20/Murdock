@@ -193,8 +193,7 @@ def test_embed_failure_treated_as_non_target():
 
 
 def test_guard_rejects_too_little_kept_audio():
-    # The target dominates the speech, but what is left after dropping
-    # the rest is below the embedder's 0.5 s floor → leave it alone.
+    # Target dominates, but the kept audio is below the 0.5 s floor.
     vad = FakeVAD([(0.0, 0.4), (0.4, 0.6)])
     emb = FakeEmbedder()
     spk = FakeSpeakers([(0.1, 1, "jonas")])
@@ -207,11 +206,7 @@ def test_guard_rejects_too_little_kept_audio():
     assert res.audio == audio
 
 
-# --- The matched speaker must have said most of the clip ----------------
-#
-# The verdict on the extracted audio vouches for the whole transcript,
-# which is taken from the full clip. A short enrolled word must never
-# carry an unknown voice's command through the gate.
+# --- Majority rule --------------------------------------------------------
 
 
 def test_one_short_enrolled_word_cannot_vouch_for_an_unknown_command():
@@ -232,8 +227,7 @@ def test_one_short_enrolled_word_cannot_vouch_for_an_unknown_command():
 
 
 def test_unscored_short_regions_count_as_someone_elses_speech():
-    # The command arrives in bursts too short to score, so none of it
-    # is attributed to anybody — it still counts against the target.
+    # Regions too short to score still count against the target.
     vad = FakeVAD([(0.0, 0.8), (1.0, 1.5), (1.6, 2.1), (2.2, 2.7)])
     emb = FakeEmbedder()
     spk = FakeSpeakers([(0.1, 1, "jonas")])  # only the 0.8 s region is scored
@@ -260,8 +254,7 @@ def test_an_even_split_is_not_a_majority():
 
 
 def test_a_second_enrolled_voice_counts_against_the_target_too():
-    # anna (1.2 s) is the dominant *enrolled* voice, but an unknown
-    # voice (2 s) said more than she did.
+    # anna (1.2 s) is the dominant enrolled voice; an unknown voice said 2 s.
     vad = FakeVAD([(0.0, 1.2), (1.2, 3.2)])
     emb = FakeEmbedder()
     spk = FakeSpeakers([(0.1, 2, "anna"), (0.9, None, None)])
@@ -270,5 +263,4 @@ def test_a_second_enrolled_voice_counts_against_the_target_too():
         audio, vad=vad, embedder=emb, speakers=spk, extraction_threshold=0.25
     )
     assert res.applied is False
-    # Who was heard is still reported.
     assert res.speakers == [{"speaker": "anna", "seconds": 1.2}]

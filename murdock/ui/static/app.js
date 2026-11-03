@@ -29,9 +29,7 @@ function apiUrl(path) {
     return path;
 }
 
-// Sent with every request. A browser signed in by cookie needs it for
-// anything that changes state: a page on another origin can't add a
-// custom header without a CORS preflight, and Murdock answers none.
+// Required for state-changing requests authenticated by the session cookie.
 const UI_HEADERS = { "X-Murdock-UI": "1" };
 
 async function api(path, options = {}) {
@@ -2521,12 +2519,6 @@ $("#ha-copy-template").addEventListener("click", async () => {
 });
 
 // --- Sign-in & API access --------------------------------------------------
-//
-// Under Home Assistant ingress the Supervisor has already signed in an
-// admin, so none of this appears. On direct port access the API answers
-// 401 until the token has been entered once; the server then sets an
-// HttpOnly session cookie, which also covers <audio> and the backup
-// download (they can't send headers).
 
 function showLogin() {
     if (document.body.classList.contains("auth-required")) return;
@@ -2579,7 +2571,7 @@ $("#api-token-copy").addEventListener("click", async () => {
     try {
         await navigator.clipboard.writeText(value);
     } catch {
-        // No clipboard API outside HTTPS: copy through a selection.
+        // Fallback for non-HTTPS contexts.
         const ta = document.createElement("textarea");
         ta.value = value;
         document.body.appendChild(ta);

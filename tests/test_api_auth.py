@@ -1,9 +1,4 @@
-"""The web API answers only ingress, the API token, or a signed-in browser.
-
-It used to answer anyone, and a wildcard CORS header let any web page the
-user had open read the answers — the backup included, with the Home
-Assistant token, the MQTT password and every speech-to-text key in it.
-"""
+"""Web API authentication: ingress, API token, or browser session."""
 
 from __future__ import annotations
 
@@ -50,7 +45,7 @@ def _secrets_in(response) -> list[str]:
     return [s for s in SECRETS if s in blob]
 
 
-# --- The original hole ----------------------------------------------------
+# --- Anonymous and cross-origin access -----------------------------------
 
 
 def test_an_anonymous_page_cannot_read_the_backup(tmp_path):
@@ -62,7 +57,6 @@ def test_an_anonymous_page_cannot_read_the_backup(tmp_path):
 
 
 def test_no_cors_grant_for_any_origin(tmp_path):
-    """Even an authorised response must not be readable by another origin."""
     client, auth = _client(tmp_path)
     r = client.get(
         "/api/backup",
@@ -127,7 +121,6 @@ def test_the_token_is_generated_once_and_kept_private(tmp_path):
     assert path.read_text().strip() == first.token
     assert len(first.token) >= 40
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
-    # A restart reads it back instead of locking every client out.
     assert ApiAuth(tmp_path, under_supervisor=False).token == first.token
 
 
@@ -160,8 +153,7 @@ def test_the_ingress_address_means_nothing_outside_the_supervisor(tmp_path):
 
 
 def test_other_addresses_are_not_ingress(tmp_path):
-    # 172.30.32.1 is the add-on network's gateway: Home Assistant Core and
-    # port-forwarded LAN traffic both arrive from there.
+    # The add-on network gateway: HA Core and port-forwarded LAN traffic.
     client, _ = _client(tmp_path, supervisor=True, address="172.30.32.1")
     assert client.get("/api/backup").status_code == 401
 
@@ -192,16 +184,12 @@ def test_login_sets_a_strict_httponly_session(tmp_path):
     cookie = r.headers["set-cookie"]
     assert cookie.startswith(f"{SESSION_COOKIE}=")
     assert "HttpOnly" in cookie and "SameSite=strict" in cookie
-    # The cookie is not the token itself.
     assert auth.token not in cookie
-    # Audio elements and the backup download ride on the cookie.
     assert client.get("/api/backup").status_code == 200
     assert client.get("/api/auth/status").json()["via"] == "session"
 
 
 def test_a_cookie_alone_cannot_change_anything(tmp_path):
-    """A cookie rides along on requests a foreign page triggers — writes
-    need the X-Murdock-UI header, which such a page can't set."""
     client, auth = _client(tmp_path)
     client.post("/api/auth/login", json={"token": auth.token})
     r = client.post("/api/auth/token/rotate")

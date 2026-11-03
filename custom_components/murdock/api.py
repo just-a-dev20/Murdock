@@ -26,11 +26,7 @@ class MurdockApiError(Exception):
 
 
 class MurdockAuthError(MurdockApiError):
-    """The proxy answered, but refused the token (missing or wrong).
-
-    Murdock 0.14 and later require the API token shown in its web UI
-    under Settings → Home Assistant → API access.
-    """
+    """The proxy refused the token (missing or wrong)."""
 
 
 class MurdockApiClient:

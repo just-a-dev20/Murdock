@@ -252,12 +252,7 @@ def test_whisper_state_is_published():
     assert published["murdock/sensor/whisper_score/state"] == "0.410"
 
 
-# --- The recognition event is never retained ----------------------------
-#
-# A retained message is replayed to every new subscriber. Home Assistant
-# restarting (or its MQTT client reconnecting) then received the last
-# recognition again and applied it as a new one — so the agent could be
-# told that a speaker from hours ago, possibly an admin, was talking.
+# --- Recognition event is not retained -----------------------------------
 
 
 def _capture_publishes(c):
@@ -287,7 +282,6 @@ def test_recognition_event_is_not_retained():
 
 
 def test_state_topics_stay_retained():
-    """Entities show their last value after a restart — that is a state."""
     import asyncio
 
     c = _client()
@@ -300,7 +294,7 @@ def test_state_topics_stay_retained():
 
 
 class _FakeBroker:
-    """Stands in for aiomqtt.Client; records what Murdock does."""
+    """Fake aiomqtt.Client that records calls."""
 
     def __init__(self, inbound, stop_event):
         self.inbound = inbound
@@ -368,12 +362,10 @@ def test_a_retained_event_left_by_an_older_version_is_cleared(monkeypatch):
         "the stale event was left on the broker for HA to replay"
     )
     assert broker.unsubscribed == ["murdock/event/recognition"]
-    # It is not mistaken for context either.
     assert c.context_snapshot() == {}
 
 
 def test_no_empty_message_when_there_is_nothing_to_clear(monkeypatch):
-    """Our own live event coming back must not trigger a clear."""
     c, broker = _run_connection(monkeypatch, [
         _live("murdock/event/recognition", '{"speaker": "Jonas"}'),
         _live("murdock/event/recognition", '{"speaker": "Anna"}'),

@@ -15,7 +15,7 @@ Topic layout (prefix defaults to ``murdock``)::
     murdock/status                              online | offline (LWT)
     murdock/sensor/<name>/state                 published recognition state
     murdock/binary_sensor/<name>/state          published recognition state
-    murdock/event/recognition                   full JSON event (NOT retained)
+    murdock/event/recognition                   full JSON event (not retained)
     murdock/context/<room>/tv                    HA → {"playing": true}   (retained)
     murdock/context/<room>/presence              HA → {"present": true}   (retained)
     murdock/context/global/tv                    fallback when no room match
@@ -28,13 +28,8 @@ Architecture:
     - Reconnect loop handles transient broker outages with backoff. All
       context topics are retained, so Murdock pulls the last known state
       immediately on (re)connect — never blind after a restart.
-    - The recognition *event* is the one thing never retained. A retained
-      message is replayed to every new subscriber — Home Assistant
-      starting, or its MQTT client reconnecting — and a replayed event
-      reads as a recognition that just happened, so the agent would be
-      told a speaker from minutes or days ago is talking. Versions up to
-      0.13.0 did retain it; a copy they left on the broker is cleared on
-      connect (see ``_clear_stale_event``).
+    - The recognition event is not retained: the broker would replay it to
+      every new subscriber as if it had just happened.
 """
 
 from __future__ import annotations
@@ -243,9 +238,8 @@ class MQTTClient:
                     # …and the active-satellite signal (which device is
                     # currently running a pipeline).
                     await client.subscribe(f"{self.topic_prefix}/active_satellite")
-                    # …and, until its first message, our own event topic:
-                    # a retained copy left by an older version arrives
-                    # right away and is cleared (see _clear_stale_event).
+                    # …and our own event topic until its first message, to
+                    # clear a retained copy left by an older version.
                     event_topic = self.event_topic
                     await client.subscribe(event_topic)
                     event_checked = False
@@ -291,28 +285,16 @@ class MQTTClient:
         return f"{self.topic_prefix}/event/recognition"
 
     async def _clear_stale_event(self, client, message) -> None:
-        """Delete a recognition event an older version left retained.
+        """Clear a retained event left by an older version, then unsubscribe.
 
-        Called with the first message on the event topic after connecting.
-        If it is retained, it is a leftover — this version never retains
-        the event — and Home Assistant would replay it on its next restart
-        as a fresh recognition. Publishing an empty retained payload
-        removes it from the broker. Otherwise the message is simply our own
-        latest event coming back. Either way the topic is then
-        unsubscribed, so Murdock does not keep reading its own events.
-
-        Only clearing when a leftover is actually there keeps subscribers
-        from seeing an empty message on every reconnect.
+        Only publishes when a retained copy exists, so subscribers don't get
+        an empty message on every reconnect.
         """
         topic = str(message.topic)
         try:
             if getattr(message, "retain", False) and message.payload:
                 await client.publish(topic, b"", qos=1, retain=True)
-                _LOGGER.info(
-                    "Cleared a stale retained recognition event from %s — "
-                    "Home Assistant would have replayed it as a new "
-                    "recognition on its next restart", topic,
-                )
+                _LOGGER.info("Cleared a stale retained recognition event from %s", topic)
             await client.unsubscribe(topic)
         except Exception as exc:
             _LOGGER.debug("Stale event check on %s failed: %s", topic, exc)
@@ -670,12 +652,7 @@ class MQTTClient:
     async def _publish_state(
         self, topic: str, value: str, retain: bool = True
     ) -> None:
-        """Publish a single value, retained unless told otherwise.
-
-        Swallows errors. States are retained so HA's entities show the
-        last value after a restart; the recognition event must not be
-        (see the module docstring).
-        """
+        """Publish a single value. Swallows errors."""
         if not self._connected or self._client is None:
             return
         try:
@@ -774,9 +751,6 @@ class MQTTClient:
             speakers=speakers,
         )
 
-        # An event, not a state: never retained. A retained copy would be
-        # replayed to Home Assistant on its next restart or reconnect and
-        # taken for a recognition that just happened.
         await self._publish_state(
             self.event_topic, json.dumps(event_payload), retain=False
         )

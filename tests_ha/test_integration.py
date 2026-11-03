@@ -187,7 +187,6 @@ async def test_an_unreachable_internal_address_is_left_alone(hass: HomeAssistant
 async def test_a_retained_recognition_is_not_taken_for_a_new_one(
     hass: HomeAssistant, aioclient_mock
 ):
-    """HA restarting replays the broker's retained copy; that is old news."""
     import json
     from types import SimpleNamespace
 
@@ -209,7 +208,7 @@ async def test_a_retained_recognition_is_not_taken_for_a_new_one(
     assert state is not None and state.speaker == "Jonas"
 
 
-# --- Murdock 0.14+ requires its API token ---------------------------------
+# --- API token -------------------------------------------------------------
 
 
 def _refuse(aioclient_mock, base):
@@ -226,7 +225,6 @@ def _reauth_flows(hass, entry):
 
 
 async def test_setup_without_a_token_asks_for_one(hass: HomeAssistant, aioclient_mock):
-    """An entry from before Murdock required a token gets a reauth prompt."""
     _refuse(aioclient_mock, OLD_URL)
     entry = _entry()
     coordinator = await _setup(hass, entry)
@@ -246,7 +244,6 @@ async def test_reauth_stores_a_working_token(hass: HomeAssistant, aioclient_mock
     await _setup(hass, entry)
     [flow] = _reauth_flows(hass, entry)
 
-    # A wrong token is refused and the form comes back.
     result = await hass.config_entries.flow.async_configure(
         flow["flow_id"], {"token": "wrong"}
     )

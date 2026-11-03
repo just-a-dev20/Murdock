@@ -95,8 +95,8 @@ etc.), the optional `8099/tcp` port can be mapped on the addon's
 
 Through ingress no extra sign-in is needed — Home Assistant has already
 signed you in as an admin. Everything else (direct access on port 8099,
-the Murdock integration, scripts) needs the **API token**, shown in the
-Web UI under *Settings → Home Assistant → API access*. A browser asks for
+the Murdock integration, scripts) needs the API token, shown in the
+Web UI under Settings → Home Assistant → API access. A browser asks for
 it once and stays signed in. Paste the same token into the integration;
 after upgrading from 0.13.0 or earlier the integration asks for it with a
 re-authenticate prompt.

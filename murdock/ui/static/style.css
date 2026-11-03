@@ -1001,7 +1001,7 @@ button.secondary.active {
 
 .svc-stats.warn { color: var(--warn, #fcd34d); }
 
-/* Signed out: only the sign-in card is shown (see app.js showLogin). */
+/* Signed out: only the sign-in card is shown. */
 body.auth-required main > section,
 body.auth-required header nav {
     display: none !important;

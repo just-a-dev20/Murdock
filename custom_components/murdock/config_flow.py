@@ -54,7 +54,6 @@ _LOGGER = logging.getLogger(__name__)
 
 _CONF_ADD_ANOTHER = "add_another"
 
-# The token unlocks everything in Murdock; don't show it in the form.
 _TOKEN_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 
 
@@ -167,9 +166,7 @@ class MurdockConfigFlow(ConfigFlow, domain=DOMAIN):
                     vol.Required(
                         CONF_BASE_URL, default="http://homeassistant.local:8099"
                     ): TextSelector(),
-                    # Optional only so a Murdock older than 0.14 (no
-                    # auth) can still be added; newer ones answer
-                    # invalid_auth without it.
+                    # Optional for Murdock versions without auth.
                     vol.Optional(CONF_TOKEN): _TOKEN_SELECTOR,
                 }
             ),
@@ -179,12 +176,7 @@ class MurdockConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_reauth(
         self, entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:
-        """Murdock refused the stored token (missing, wrong or rotated).
-
-        Started by the coordinator on a 401. Entries created before
-        Murdock required a token have none, so this is also how existing
-        installs pick one up after the upgrade.
-        """
+        """Started by the coordinator when Murdock refuses the stored token."""
         self._reauth_entry = self.hass.config_entries.async_get_entry(
             self.context["entry_id"]
         )
@@ -194,15 +186,13 @@ class MurdockConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         entry = self._reauth_entry
-        if entry is None:  # pragma: no cover - entry removed meanwhile
+        if entry is None:  # pragma: no cover
             return self.async_abort(reason="reauth_failed")
         errors: dict[str, str] = {}
         if user_input is not None:
             token = (user_input.get(CONF_TOKEN) or "").strip() or None
             client = MurdockApiClient(self.hass, entry.data[CONF_BASE_URL], token)
             try:
-                # Not /api/version alone: any protected endpoint will do,
-                # and this one the integration needs anyway.
                 await client.get_satellites()
             except MurdockAuthError:
                 errors["base"] = "invalid_auth"

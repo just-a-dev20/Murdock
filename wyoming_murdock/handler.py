@@ -1059,8 +1059,6 @@ class MurdockHandler(AsyncEventHandler):
             )
             return result.audio
         if getattr(result, "declined_minority", False):
-            # The transcript covers the whole clip, so a speaker who said
-            # only a sliver of it must not be verified on that sliver.
             _LOGGER.info(
                 "[%s] EXTRACTION declined: %s spoke only %.0f%% of the "
                 "speech — verifying the whole clip",
@@ -1877,13 +1875,9 @@ class MurdockHandler(AsyncEventHandler):
             except Exception:
                 _LOGGER.debug("[%s] Liveness analysis failed", sid, exc_info=True)
 
-        # Trim leading chime for embedding only. ``verify_audio`` is the
-        # embedder's copy — chime-trimmed here and possibly narrowed by
-        # extraction below. Every transcript and shadow run takes
-        # ``audio_16k``, what the microphone sent: a buffered engine
-        # (OpenAI, Voxtral, HA Cloud) transcribes exactly the bytes it is
-        # given, so handing it this copy cut off the first second and
-        # every speech region extraction dropped.
+        # Trim leading chime for embedding only. ``verify_audio`` (trimmed,
+        # possibly narrowed by extraction) is for the embedder; transcripts
+        # and shadows use the full ``audio_16k``.
         skip_seconds = self.context.get_skip_leading_seconds()
         verify_audio = audio_16k
         if skip_seconds > 0 and audio_16k:

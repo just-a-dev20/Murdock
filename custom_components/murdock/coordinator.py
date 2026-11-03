@@ -15,8 +15,7 @@ are consumed here:
   explicitly or the integration sees nothing at all.
 
 Both carry the identical payload, and duplicates (someone running both)
-are dropped by (satellite, timestamp). Retained MQTT messages are
-ignored: they are replays of an old recognition, not a new one.
+are dropped by (satellite, timestamp). Retained MQTT messages are ignored.
 """
 
 from __future__ import annotations
@@ -134,8 +133,7 @@ class MurdockCoordinator:
         self.addon_slug: str | None = None
         # Device registry id of the proxy device, parent of the satellites.
         self.proxy_device_id: str | None = None
-        # Set once Murdock refused the token, so the reauth prompt and its
-        # warning appear once rather than on every poll.
+        # Prompt for reauth once, not on every poll.
         self.auth_failed: bool = False
 
     @property
@@ -306,13 +304,7 @@ class MurdockCoordinator:
 
     @callback
     def _async_auth_failed(self, exc: MurdockAuthError) -> None:
-        """Murdock answered but refused the token: ask the user for it.
-
-        The entry stays loaded — recognitions over MQTT need no token and
-        keep arriving — while Home Assistant shows a re-authenticate
-        prompt. Raised by Murdock 0.14+ for entries set up without a
-        token, or after the token was rotated.
-        """
+        """Start reauth. The entry stays loaded: MQTT needs no token."""
         if self.auth_failed:
             return
         self.auth_failed = True
@@ -386,13 +378,7 @@ class MurdockCoordinator:
     def _handle_mqtt_message(self, msg) -> None:
         """Recognition from Murdock's MQTT topic (token-free path)."""
         if getattr(msg, "retain", False):
-            # The broker replays a retained message to every new
-            # subscription — Home Assistant starting, or its MQTT client
-            # reconnecting. That is a recognition from whenever it was
-            # published, not now; applying it stamped it with the current
-            # time and told the agent an old speaker (possibly an admin)
-            # was talking. Murdock up to 0.13.0 retained the event; newer
-            # versions don't, and clear a leftover copy on connect.
+            # A replay of an old recognition (HA restart or reconnect).
             _LOGGER.debug("Ignoring retained recognition on %s", msg.topic)
             return
         try:

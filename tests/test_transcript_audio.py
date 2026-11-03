@@ -1,22 +1,7 @@
-"""What a buffered STT engine is given, and what the gate vouches for.
+"""Buffered STT engines get the full audio; extraction can't bypass the gate.
 
-Two defects that met in the same place:
-
-* The cloud engines (OpenAI, Voxtral, HA Cloud) transcribe a buffer
-  rather than a live stream, and that buffer was the *embedder's* copy:
-  the first second cut off for the satellite chime, and — after speaker
-  extraction — every short speech region dropped. Words went missing
-  from the transcript. The chime trim is for the embedding only; the
-  transcript must come from what the microphone sent.
-* Extraction verified only the dominant *enrolled* voice's regions, so
-  one short word from an enrolled user let an unknown voice's command
-  through the gate under that user's name. With the transcript taken
-  from the full clip, that has to be closed at the same time.
-
-The session is driven end to end through ``_finish_session`` with light
-fakes: the embedder encodes how much of a clip is the enrolled voice,
-the VAD finds runs of each voice, so the gate, extraction and the
-buffered engine all run for real.
+Drives ``_finish_session`` end to end with fakes, so the gate, extraction
+and the buffered engine run for real.
 """
 
 from __future__ import annotations
@@ -36,8 +21,7 @@ from wyoming_murdock.handler import MurdockHandler
 
 _RATE = 16000
 
-# Each "voice" is a constant sample value, so who spoke where can be
-# read straight off the PCM.
+# Each voice is a constant sample value.
 CHIME = 500
 JONAS = 2000      # enrolled
 STRANGER = 3000   # not enrolled
@@ -177,7 +161,6 @@ def _run(handler, pcm: bytes) -> None:
 
 
 def test_the_engine_hears_the_first_second(tmp_path):
-    """The chime trim is for the embedder; the words after it are not."""
     ctx, handler, engine, sent, _ = _setup(tmp_path, extraction=False)
     pcm = _pcm(_tone(CHIME, 0.3), _tone(JONAS, 0.7), _tone(JONAS, 2.0))
     _run(handler, pcm)
@@ -187,10 +170,8 @@ def test_the_engine_hears_the_first_second(tmp_path):
 
 
 def test_short_regions_dropped_by_extraction_still_reach_the_engine(tmp_path):
-    """Extraction narrows what is *verified*, never what is transcribed."""
     ctx, handler, engine, sent, _ = _setup(tmp_path)
-    # Jonas speaks 2 s, pauses, then adds a 0.4 s word ("an") — too
-    # short for extraction to score, so it is dropped from the verify copy.
+    # The 0.4 s word is too short to score, so extraction drops it.
     pcm = _pcm(
         _tone(CHIME, 1.0), _tone(JONAS, 2.0), _gap(0.1), _tone(JONAS, 0.4),
     )
@@ -200,7 +181,6 @@ def test_short_regions_dropped_by_extraction_still_reach_the_engine(tmp_path):
 
 
 def test_one_enrolled_word_does_not_carry_a_strangers_command(tmp_path):
-    """With the hard gate on, the stranger's command is blocked."""
     ctx, handler, engine, sent, published = _setup(tmp_path, require_match=True)
     pcm = _pcm(
         _tone(CHIME, 1.0),
@@ -217,7 +197,6 @@ def test_one_enrolled_word_does_not_carry_a_strangers_command(tmp_path):
 
 
 def test_one_enrolled_word_does_not_lend_its_name_without_the_gate(tmp_path):
-    """Gate off: the command is forwarded, but not as Jonas."""
     ctx, handler, engine, sent, published = _setup(tmp_path, require_match=False)
     pcm = _pcm(
         _tone(CHIME, 1.0), _tone(JONAS, 0.7), _gap(0.1), _tone(STRANGER, 2.3),
@@ -229,7 +208,6 @@ def test_one_enrolled_word_does_not_lend_its_name_without_the_gate(tmp_path):
 
 
 def test_a_clear_majority_is_still_extracted_and_recognised(tmp_path):
-    """Extraction keeps doing its job when the enrolled voice dominates."""
     ctx, handler, engine, sent, published = _setup(tmp_path, require_match=True)
     pcm = _pcm(
         _tone(CHIME, 1.0), _tone(JONAS, 2.5), _gap(0.1), _tone(STRANGER, 0.8),

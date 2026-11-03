@@ -11,24 +11,24 @@ the MQTT password and every speech-to-text API key.
 
 Now a request needs one of:
 
-- **Home Assistant ingress** — the add-on panel works as before, no
+- Home Assistant ingress: the add-on panel works as before, no
   sign-in (Home Assistant has already signed in an admin).
-- **The API token** as `Authorization: Bearer …` — the integration,
+- The API token as `Authorization: Bearer …`: the integration,
   scripts, curl.
-- **A signed-in browser** — direct access on port 8099 asks for the token
+- A signed-in browser: direct access on port 8099 asks for the token
   once and keeps an HttpOnly, SameSite=Strict session cookie. Changes
   additionally need a header only the UI sends, so another web page
   can't use the session.
 
 The token is generated on first start into `<data dir>/api_token`
 (`./data/api_token` with docker compose) or pinned with `API_TOKEN`. The
-UI shows it under *Settings → Home Assistant → API access*, with copy
+UI shows it under Settings → Home Assistant → API access, with copy
 and regenerate. The CORS middleware is gone — nothing legitimately
 needed it. `/api/health` stays public for container health checks.
 
-**Update the integration to 0.5.0 along with the add-on.** It needs the
-token: existing entries show a **re-authenticate** prompt under
-*Settings → Devices & Services*; paste the token there. Recognitions over
+Update the integration to 0.5.0 along with the add-on. It needs the
+token: existing entries show a re-authenticate prompt under
+Settings → Devices & Services; paste the token there. Recognitions over
 MQTT keep arriving in the meantime. (Integration 0.4.0 has no way to add
 a token to an existing entry short of removing and re-adding it.)
 
@@ -50,7 +50,7 @@ Murdock connects, and the integration ignores retained events.
 
 The buffered engines — OpenAI-compatible, Voxtral, Home Assistant Cloud —
 were given the speaker embedder's copy of the audio: the first second cut
-off (the chime trim, *Skip leading seconds*) and, with speaker extraction
+off (the chime trim, "Skip leading seconds") and, with speaker extraction
 on, every speech region extraction dropped. Words at the start, and short
 words between pauses, went missing from the transcript. The trim and
 extraction now apply to the embedding only; transcripts and shadow

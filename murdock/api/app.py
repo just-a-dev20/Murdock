@@ -30,11 +30,7 @@ _STATIC_DIR = Path(__file__).parent.parent / "ui" / "static"
 
 
 def create_app(context: AppContext, auth: Optional[ApiAuth] = None) -> FastAPI:
-    """Build the FastAPI application bound to an :class:`AppContext`.
-
-    ``auth`` defaults to the token kept in the data directory (see
-    :mod:`murdock.api.auth`); tests pass their own.
-    """
+    """Build the FastAPI application bound to an :class:`AppContext`."""
     app = FastAPI(
         title="Murdock",
         description="Speaker recognition proxy for Home Assistant",
@@ -43,12 +39,8 @@ def create_app(context: AppContext, auth: Optional[ApiAuth] = None) -> FastAPI:
     app.state.context = context
     app.state.auth = auth or ApiAuth.from_settings(context.settings)
 
-    # Every request outside a short public list needs ingress, the API
-    # token or a signed-in browser. There is deliberately no CORS
-    # middleware: the UI is served from this same origin and the Home
-    # Assistant integration talks server to server, so nothing needs it —
-    # and the wildcard that used to be here let any web page read the
-    # API's answers, the backup and its secrets included.
+    # No CORS middleware: the UI is same-origin and the integration calls
+    # the API server to server.
     app.add_middleware(AuthMiddleware, auth=app.state.auth)
 
     app.include_router(auth_router)

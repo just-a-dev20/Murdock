@@ -1,35 +1,16 @@
-"""Who may use the web API.
+"""Authentication for the web API.
 
-The API hands out everything Murdock knows — the backup alone carries the
-Home Assistant token, the MQTT password and every speech-to-text API key —
-and it can rewrite all of it. It used to answer anyone who could reach the
-port, and a wildcard CORS header let any web page the user happened to
-open read the answers too. Now a request is let in for exactly one of
-three reasons:
+A request is allowed if it comes from one of:
 
-* **Home Assistant ingress.** Running as an add-on, the panel is reached
-  through the Supervisor's ingress proxy, which has already logged in a
-  Home Assistant admin (``panel_admin: true``). Those requests arrive from
-  the proxy's fixed address, ``172.30.32.2``, which nothing else on the
-  add-on network can use. Trusted only under the Supervisor.
-* **The API token** as ``Authorization: Bearer <token>`` — the Home
-  Assistant integration, scripts, curl. A web page on another origin can
-  not attach that header without a CORS preflight, which now fails.
-* **A browser session** — after the token was entered once in the web UI,
-  an ``HttpOnly``, ``SameSite=Strict`` cookie, needed because ``<audio>``
-  elements and downloads can't send headers. A cookie rides along on
-  requests the user did not mean to make, so anything that changes state
-  additionally needs the ``X-Murdock-UI`` header, which the UI always
-  sends and a foreign page can't (again: preflight).
+* Home Assistant ingress: under the Supervisor, from the ingress proxy's
+  fixed address. Home Assistant has already authenticated an admin.
+* ``Authorization: Bearer <token>`` with the API token.
+* A session cookie set by ``/api/auth/login``. Cookie requests that change
+  state also need the ``X-Murdock-UI`` header, which a page on another
+  origin can't send without a CORS preflight.
 
-The token is a random 256-bit value generated on first start and kept in
-``<data dir>/api_token`` (readable on the host in the docker setups), or
-pinned with the ``API_TOKEN`` environment variable. The web UI shows it
-under *Settings → API access* so it can be pasted into the integration.
-
-Left open on purpose: the UI shell (``/``, ``/static``) so the login
-prompt can load, ``/api/health`` for container health checks, and the
-login endpoints themselves.
+The token comes from ``API_TOKEN`` or is generated into
+``<data_dir>/api_token`` on first start.
 """
 
 from __future__ import annotations
@@ -46,14 +27,12 @@ from typing import Optional
 
 _LOGGER = logging.getLogger("murdock.api.auth")
 
-# The Supervisor's ingress proxy. Fixed by Home Assistant; add-ons are
-# told to accept ingress traffic from this address only.
+# Fixed address of the Supervisor's ingress proxy.
 INGRESS_PROXY_IP = "172.30.32.2"
 
 TOKEN_FILENAME = "api_token"
 SESSION_COOKIE = "murdock_session"
 UI_HEADER = "x-murdock-ui"
-# A browser that entered the token once stays signed in this long.
 SESSION_MAX_AGE = 90 * 24 * 3600
 
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -66,7 +45,6 @@ _PUBLIC_PATHS = frozenset({
 })
 _PUBLIC_PREFIXES = ("/static/",)
 
-# Reasons a request was let in, as reported by ``authorize``.
 VIA_INGRESS = "ingress"
 VIA_TOKEN = "token"
 VIA_SESSION = "session"
@@ -77,7 +55,7 @@ def _under_supervisor() -> bool:
 
 
 def _write_private(path: Path, text: str) -> None:
-    """Write ``text`` to ``path`` readable by the owner only, atomically."""
+    """Atomically write ``text`` to ``path`` with mode 0600."""
     tmp = path.with_name(path.name + ".tmp")
     fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
@@ -105,8 +83,6 @@ class ApiAuth:
             _under_supervisor() if under_supervisor is None else under_supervisor
         )
         env_token = (env_token or "").strip()
-        # Pinned by the environment: the file is neither read nor written,
-        # and the token can't be rotated from the UI.
         self.pinned = bool(env_token)
         if self.pinned:
             self._token = env_token
@@ -131,8 +107,8 @@ class ApiAuth:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         _write_private(self._path, token + "\n")
         _LOGGER.info(
-            "Generated an API token in %s — the web UI shows it under "
-            "Settings → API access", self._path,
+            "Generated an API token in %s (shown in the web UI under "
+            "Settings → Home Assistant → API access)", self._path,
         )
         return token
 
@@ -145,7 +121,6 @@ class ApiAuth:
         return None if self.pinned else self._path
 
     def rotate(self) -> str:
-        """Replace the token. Every client using the old one is shut out."""
         if self.pinned:
             raise RuntimeError("the API token is pinned by API_TOKEN")
         token = _new_token()
@@ -165,19 +140,10 @@ class ApiAuth:
         )
 
     def session_value(self) -> str:
-        """Cookie value for a signed-in browser.
-
-        Derived from the token rather than the token itself, so the cookie
-        is not a credential for the Bearer header, and rotating the token
-        signs every browser out.
-        """
+        """HMAC of the token, so rotating the token ends every session."""
         return hmac.new(
             self._token.encode("utf-8"), b"murdock-ui-session", hashlib.sha256
         ).hexdigest()
-
-    # ------------------------------------------------------------------
-    # Request checks (on raw ASGI scopes, so the middleware stays cheap)
-    # ------------------------------------------------------------------
 
     def is_ingress(self, scope) -> bool:
         if not self.under_supervisor:
@@ -186,7 +152,7 @@ class ApiAuth:
         return bool(client) and client[0] == INGRESS_PROXY_IP
 
     def authorize(self, scope) -> tuple[Optional[str], Optional[str]]:
-        """``(how, None)`` when the request may proceed, else ``(None, why)``."""
+        """Return ``(how, None)`` if allowed, else ``(None, reason)``."""
         if self.is_ingress(scope):
             return VIA_INGRESS, None
         headers = _headers(scope)
@@ -231,7 +197,7 @@ def _cookie(headers: dict, name: str) -> Optional[str]:
 
 
 class AuthMiddleware:
-    """Pure ASGI: refuses every non-public request ``ApiAuth`` doesn't allow."""
+    """Reject non-public requests that ``ApiAuth`` doesn't allow."""
 
     def __init__(self, app, auth: ApiAuth) -> None:
         self.app = app
