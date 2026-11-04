@@ -1,5 +1,69 @@
 # Changelog
 
+## Unreleased
+
+### The web API needs a token
+
+The web UI and REST API answered anyone who could reach port 8099, and a
+wildcard CORS header let any web page read the responses. That included
+the backup, which contains the Home Assistant token, the MQTT password
+and the speech-to-text API keys.
+
+A request now needs one of:
+
+- Home Assistant ingress. The add-on panel works as before, without
+  signing in.
+- The API token as `Authorization: Bearer …` (integration, scripts,
+  curl).
+- A browser session. Direct access on port 8099 asks for the token once
+  and sets an HttpOnly, SameSite=Strict cookie. Requests that change
+  something also need a header only the UI sends.
+
+The token is generated on first start into `<data dir>/api_token`
+(`./data/api_token` with docker compose), or set with `API_TOKEN`. The
+web UI shows it under Settings → Home Assistant → API access, where it
+can also be regenerated. The CORS middleware is removed. `/api/health`
+stays public for container health checks.
+
+Update the integration to 0.5.0 together with the add-on. Existing
+entries show a re-authenticate prompt under Settings → Devices &
+Services to enter the token; recognitions over MQTT keep working in the
+meantime. With integration 0.4.0 the only way to add a token is to
+remove and re-add the entry.
+
+### No stale speaker after Home Assistant restarts
+
+The recognition event on `murdock/event/recognition` was published
+retained. The broker sends retained messages to every new subscriber, so
+after each Home Assistant restart or MQTT reconnect the integration
+received the last recognition again and stored it with the current
+time. For the length of the freshness window the conversation agent was
+told that this speaker was talking.
+
+The event is no longer retained (sensor states still are). Murdock
+removes a retained copy left by an older version when it connects, and
+the integration ignores retained events.
+
+### Cloud engines get the whole utterance
+
+The buffered engines (OpenAI-compatible, Voxtral, Home Assistant Cloud)
+received the speaker embedder's copy of the audio: the first second
+trimmed for the chime ("Skip leading seconds") and, with extraction on,
+without the speech regions extraction dropped. Words at the start and
+short words between pauses were missing from transcripts. Trimming and
+extraction now apply to the embedding only. The streaming Wyoming path
+was not affected.
+
+### Extraction no longer vouches for someone else's command
+
+Extraction keeps only the dominant enrolled speaker's regions for the
+verify gate, but the transcript covers the whole clip. An enrolled user
+saying one short word next to an unknown voice's command therefore got
+the command through the gate under their name. Extraction now only
+narrows the clip when the matched speaker said more than half of the
+detected speech; otherwise the clip is judged as a whole, as with
+extraction off. The log shows `EXTRACTION declined` when this happens.
+
 ## 0.13.0
 
 ### A slow main no longer costs the turn

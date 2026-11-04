@@ -98,8 +98,8 @@ def test_empty_audio():
 
 
 def test_drops_non_matching_region():
-    # Region 0 = target (close), region 1 = TV (far, no match).
-    vad = FakeVAD([(0.0, 1.5), (1.5, 3.0)])
+    # Region 0 = target (close, 2 s), region 1 = TV (far, no match, 1 s).
+    vad = FakeVAD([(0.0, 2.0), (2.0, 3.0)])
     emb = FakeEmbedder()
     spk = FakeSpeakers([
         (0.10, 1, "jonas"),   # region 0 → match jonas
@@ -112,9 +112,10 @@ def test_drops_non_matching_region():
     assert res.applied is True
     assert res.target_speaker == "jonas"
     assert res.n_regions == 2 and res.n_kept == 1
-    # Kept audio is just the first 1.5 s region.
-    assert len(res.audio) == int(1.5 * _RATE) * _WIDTH
-    assert res.dropped_seconds == pytest.approx(1.5, abs=0.01)
+    # Kept audio is just the first 2 s region.
+    assert len(res.audio) == int(2.0 * _RATE) * _WIDTH
+    assert res.dropped_seconds == pytest.approx(1.0, abs=0.01)
+    assert res.target_share == pytest.approx(2 / 3, abs=0.01)
 
 
 def test_all_regions_target_is_noop():
@@ -180,7 +181,7 @@ def test_short_region_not_scored():
 
 
 def test_embed_failure_treated_as_non_target():
-    vad = FakeVAD([(0.0, 1.5), (1.5, 3.0)])
+    vad = FakeVAD([(0.0, 2.0), (2.0, 3.0)])
     emb = FakeEmbedder(raise_on=(1,))  # second embed raises
     spk = FakeSpeakers([(0.1, 1, "jonas")])  # only first region scored
     audio = _silence(3.0)
@@ -192,17 +193,74 @@ def test_embed_failure_treated_as_non_target():
 
 
 def test_guard_rejects_too_little_kept_audio():
-    # Two short-ish matched regions whose total is below the 0.5 s floor
-    # would be rejected — but here we force a tiny kept region.
+    # Target dominates, but the kept audio is below the 0.5 s floor.
+    vad = FakeVAD([(0.0, 0.4), (0.4, 0.6)])
+    emb = FakeEmbedder()
+    spk = FakeSpeakers([(0.1, 1, "jonas")])
+    audio = _silence(0.6)
+    res = extract_target_speaker(
+        audio, vad=vad, embedder=emb, speakers=spk,
+        extraction_threshold=0.25, min_region_sec=0.3,
+    )
+    assert res.applied is False
+    assert res.audio == audio
+
+
+# --- Majority rule --------------------------------------------------------
+
+
+def test_one_short_enrolled_word_cannot_vouch_for_an_unknown_command():
+    # jonas says "ja" (0.7 s); an unknown voice gives a 2.3 s command.
     vad = FakeVAD([(0.0, 0.7), (0.7, 3.0)])
     emb = FakeEmbedder()
-    # Region 0 (0.7s) matches jonas; region 1 (2.3s) is TV/no-match.
-    # Kept = 0.7s ≥ 0.5s floor, so this should still apply.
     spk = FakeSpeakers([(0.1, 1, "jonas"), (0.9, None, None)])
     audio = _silence(3.0)
     res = extract_target_speaker(
         audio, vad=vad, embedder=emb, speakers=spk,
         extraction_threshold=0.25, min_region_sec=0.6,
     )
-    assert res.applied is True
-    assert len(res.audio) == int(0.7 * _RATE) * _WIDTH
+    assert res.applied is False, "a 0.7 s word was allowed to stand for 3 s of speech"
+    assert res.audio == audio, "the gate must judge the whole clip"
+    assert res.declined_minority is True
+    assert res.target_speaker == "jonas"
+    assert res.target_share == pytest.approx(0.7 / 3.0, abs=0.01)
+
+
+def test_unscored_short_regions_count_as_someone_elses_speech():
+    # Regions too short to score still count against the target.
+    vad = FakeVAD([(0.0, 0.8), (1.0, 1.5), (1.6, 2.1), (2.2, 2.7)])
+    emb = FakeEmbedder()
+    spk = FakeSpeakers([(0.1, 1, "jonas")])  # only the 0.8 s region is scored
+    audio = _silence(2.7)
+    res = extract_target_speaker(
+        audio, vad=vad, embedder=emb, speakers=spk,
+        extraction_threshold=0.25, min_region_sec=0.6,
+    )
+    assert emb.calls == 1
+    assert res.applied is False
+    assert res.declined_minority is True
+
+
+def test_an_even_split_is_not_a_majority():
+    vad = FakeVAD([(0.0, 1.5), (1.5, 3.0)])
+    emb = FakeEmbedder()
+    spk = FakeSpeakers([(0.1, 1, "jonas"), (0.8, None, None)])
+    audio = _silence(3.0)
+    res = extract_target_speaker(
+        audio, vad=vad, embedder=emb, speakers=spk, extraction_threshold=0.25
+    )
+    assert res.applied is False
+    assert res.declined_minority is True
+
+
+def test_a_second_enrolled_voice_counts_against_the_target_too():
+    # anna (1.2 s) is the dominant enrolled voice; an unknown voice said 2 s.
+    vad = FakeVAD([(0.0, 1.2), (1.2, 3.2)])
+    emb = FakeEmbedder()
+    spk = FakeSpeakers([(0.1, 2, "anna"), (0.9, None, None)])
+    audio = _silence(3.2)
+    res = extract_target_speaker(
+        audio, vad=vad, embedder=emb, speakers=spk, extraction_threshold=0.25
+    )
+    assert res.applied is False
+    assert res.speakers == [{"speaker": "anna", "seconds": 1.2}]

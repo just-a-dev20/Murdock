@@ -250,3 +250,133 @@ def test_whisper_state_is_published():
     ))
     assert published["murdock/binary_sensor/whisper/state"] == "OFF"
     assert published["murdock/sensor/whisper_score/state"] == "0.410"
+
+
+# --- Recognition event is not retained -----------------------------------
+
+
+def _capture_publishes(c):
+    published = {}
+
+    async def _capture(topic, payload, retain=True):
+        published[topic] = (payload, retain)
+
+    c._publish_state = _capture
+    c._connected = True
+    c._client = object()
+    return published
+
+
+def test_recognition_event_is_not_retained():
+    import asyncio
+
+    c = _client()
+    published = _capture_publishes(c)
+    asyncio.run(c.publish_recognition(
+        speaker="Jonas", confidence=0.9, satellite_id="wohnzimmer",
+        is_known=True, role="admin",
+    ))
+    payload, retain = published["murdock/event/recognition"]
+    assert retain is False, "the event would be replayed as a new recognition"
+    assert '"speaker": "Jonas"' in payload
+
+
+def test_state_topics_stay_retained():
+    import asyncio
+
+    c = _client()
+    published = _capture_publishes(c)
+    asyncio.run(c.publish_recognition(
+        speaker="Jonas", confidence=0.9, satellite_id="wohnzimmer", is_known=True,
+    ))
+    states = {t: r for t, (_p, r) in published.items() if t.endswith("/state")}
+    assert states and all(states.values())
+
+
+class _FakeBroker:
+    """Fake aiomqtt.Client that records calls."""
+
+    def __init__(self, inbound, stop_event):
+        self.inbound = inbound
+        self.stop_event = stop_event
+        self.published = []
+        self.subscribed = []
+        self.unsubscribed = []
+
+    async def publish(self, topic, payload=None, qos=0, retain=False):
+        self.published.append((topic, payload, retain))
+
+    async def subscribe(self, topic):
+        self.subscribed.append(topic)
+
+    async def unsubscribe(self, topic):
+        self.unsubscribed.append(topic)
+
+    @property
+    def messages(self):
+        async def _gen():
+            for message in self.inbound:
+                yield message
+            self.stop_event.set()  # end the connection loop
+        return _gen()
+
+
+def _run_connection(monkeypatch, inbound):
+    import asyncio
+
+    import aiomqtt
+
+    c = _client()
+    broker = _FakeBroker(inbound, c._stop_event)
+
+    class _Client:
+        def __init__(self, **_kw):
+            pass
+
+        async def __aenter__(self):
+            return broker
+
+        async def __aexit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(aiomqtt, "Client", _Client)
+    asyncio.run(asyncio.wait_for(c._connection_loop(), timeout=5))
+    return c, broker
+
+
+def _retained(topic, payload):
+    return SimpleNamespace(topic=topic, payload=payload.encode(), retain=True)
+
+
+def _live(topic, payload):
+    return SimpleNamespace(topic=topic, payload=payload.encode(), retain=False)
+
+
+def test_a_retained_event_left_by_an_older_version_is_cleared(monkeypatch):
+    stale = '{"speaker": "Jonas", "is_known": true, "role": "admin"}'
+    c, broker = _run_connection(monkeypatch, [
+        _retained("murdock/event/recognition", stale),
+    ])
+    assert "murdock/event/recognition" in broker.subscribed
+    assert ("murdock/event/recognition", b"", True) in broker.published, (
+        "the stale event was left on the broker for HA to replay"
+    )
+    assert broker.unsubscribed == ["murdock/event/recognition"]
+    assert c.context_snapshot() == {}
+
+
+def test_no_empty_message_when_there_is_nothing_to_clear(monkeypatch):
+    c, broker = _run_connection(monkeypatch, [
+        _live("murdock/event/recognition", '{"speaker": "Jonas"}'),
+        _live("murdock/event/recognition", '{"speaker": "Anna"}'),
+    ])
+    assert not [p for p in broker.published if p[0] == "murdock/event/recognition"]
+    assert broker.unsubscribed == ["murdock/event/recognition"]
+
+
+def test_context_still_flows_alongside_the_event_check(monkeypatch):
+    c, broker = _run_connection(monkeypatch, [
+        _retained("murdock/context/wohnzimmer/tv", '{"playing": true}'),
+        _retained("murdock/event/recognition", '{"speaker": "Jonas"}'),
+    ])
+    assert c.is_tv_playing(room="wohnzimmer") is True

@@ -182,3 +182,94 @@ async def test_an_unreachable_internal_address_is_left_alone(hass: HomeAssistant
     await coordinator._async_health_poll()
     await hass.async_block_till_done()
     assert entry.data["base_url"] == OLD_URL
+
+
+async def test_a_retained_recognition_is_not_taken_for_a_new_one(
+    hass: HomeAssistant, aioclient_mock
+):
+    import json
+    from types import SimpleNamespace
+
+    _mock_proxy(aioclient_mock, OLD_URL)
+    coordinator = await _setup(hass, _entry())
+    payload = json.dumps(
+        {"satellite_id": "wz", "speaker": "Jonas", "is_known": True,
+         "role": "admin", "timestamp": 1}
+    )
+    coordinator._handle_mqtt_message(SimpleNamespace(
+        topic="murdock/event/recognition", payload=payload, retain=True,
+    ))
+    assert coordinator.state_for_satellite("wz") is None
+
+    coordinator._handle_mqtt_message(SimpleNamespace(
+        topic="murdock/event/recognition", payload=payload, retain=False,
+    ))
+    state = coordinator.state_for_satellite("wz")
+    assert state is not None and state.speaker == "Jonas"
+
+
+# --- API token -------------------------------------------------------------
+
+
+def _refuse(aioclient_mock, base):
+    for path in ("version", "state", "vocabulary", "satellites"):
+        aioclient_mock.get(f"{base}/api/{path}", status=401, json={"detail": "authentication required"})
+
+
+def _reauth_flows(hass, entry):
+    return [
+        f for f in hass.config_entries.flow.async_progress()
+        if f["context"].get("source") == "reauth"
+        and f["context"].get("entry_id") == entry.entry_id
+    ]
+
+
+async def test_setup_without_a_token_asks_for_one(hass: HomeAssistant, aioclient_mock):
+    _refuse(aioclient_mock, OLD_URL)
+    entry = _entry()
+    coordinator = await _setup(hass, entry)
+    assert entry.state.value == "loaded"  # MQTT recognitions still work
+    assert coordinator.auth_failed is True
+    assert len(_reauth_flows(hass, entry)) == 1
+    # Further refusals don't stack up more prompts.
+    await coordinator._async_health_poll()
+    await coordinator._async_health_poll()
+    await hass.async_block_till_done()
+    assert len(_reauth_flows(hass, entry)) == 1
+
+
+async def test_reauth_stores_a_working_token(hass: HomeAssistant, aioclient_mock):
+    _refuse(aioclient_mock, OLD_URL)
+    entry = _entry()
+    await _setup(hass, entry)
+    [flow] = _reauth_flows(hass, entry)
+
+    result = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"token": "wrong"}
+    )
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "invalid_auth"}
+
+    aioclient_mock.clear_requests()
+    _mock_proxy(aioclient_mock, OLD_URL)
+    result = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"token": "  the-right-token  "}
+    )
+    assert result["type"] == "abort"
+    assert result["reason"] == "reauth_successful"
+    assert entry.data["token"] == "the-right-token"
+    sent = [h for (_m, _u, _d, h) in aioclient_mock.mock_calls if h]
+    assert sent and all(h.get("Authorization") == "Bearer the-right-token" for h in sent)
+    await hass.async_block_till_done()
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.auth_failed is False and coordinator.available is True
+
+
+async def test_the_setup_form_reports_a_refused_token(hass: HomeAssistant, aioclient_mock):
+    _refuse(aioclient_mock, "http://murdock:8099")
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"base_url": "http://murdock:8099", "token": "nope"}
+    )
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "invalid_auth"}
