@@ -309,9 +309,9 @@ class MurdockCoordinator:
             return
         self.auth_failed = True
         _LOGGER.warning(
-            "Murdock at %s refused the API token (%s). Copy the token from "
-            "Murdock's web UI — Settings → Home Assistant → API access — "
-            "into the re-authentication prompt",
+            "Murdock at %s refused the API token (%s). Enter the token from "
+            "Murdock's web UI (Settings → Home Assistant → API access) in the "
+            "re-authentication prompt",
             self.api.base_url, exc,
         )
         self.entry.async_start_reauth(self.hass)

@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
-from .auth import SESSION_COOKIE, SESSION_MAX_AGE, ApiAuth
+from .auth import SESSION_COOKIE, SESSION_MAX_AGE, VIA_SESSION, ApiAuth
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -57,7 +57,7 @@ async def login(body: LoginIn, request: Request, response: Response) -> AuthStat
     if not auth.token_matches(body.token):
         raise HTTPException(status_code=401, detail="invalid API token")
     _set_session(request, response, auth)
-    return AuthStatus(authenticated=True, via="session")
+    return AuthStatus(authenticated=True, via=VIA_SESSION)
 
 
 @router.post("/logout", response_model=AuthStatus)
@@ -84,9 +84,9 @@ async def rotate_token(request: Request, response: Response) -> TokenOut:
     if auth.pinned:
         raise HTTPException(
             status_code=409,
-            detail="The token is set by the API_TOKEN environment variable — change it there.",
+            detail="The token is set by API_TOKEN and can't be rotated here.",
         )
     auth.rotate()
-    if getattr(request.state, "auth", None) == "session":
+    if getattr(request.state, "auth", None) == VIA_SESSION:
         _set_session(request, response, auth)
     return _token_out(auth)

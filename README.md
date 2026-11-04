@@ -126,9 +126,8 @@ cluster, and tag the sample later.
   them, visible in the UI.
 - **Backup/restore** — ZIP export of all speakers, samples and
   metadata; import with merge or replace mode.
-- **Protected API** — the web UI and REST API need Home Assistant
-  ingress, the API token, or a browser signed in with it once (see
-  [Security](#security)).
+- **Protected API** — access via Home Assistant ingress, the API token
+  or a signed-in browser (see [Security](#security)).
 - **DE / EN UI** — full translation for both locales.
 
 ### Home Assistant integration
@@ -228,11 +227,9 @@ configured **in the Web UI** (Settings tab) — no `.env` file required.
 | `murdock/context/<room>/tv` | HA → Murdock | `{"playing": true}` (retain!, legacy single-TV) |
 | `murdock/context/<room>/presence` | HA → Murdock | `{"present": true}` (retain!) |
 
-The recognition event is deliberately not retained: a retained copy would
-be replayed to Home Assistant on every restart or MQTT reconnect and read
-as a recognition that just happened. Murdock removes a copy left on the
-broker by 0.13.0 and earlier when it connects, and the integration
-ignores retained events.
+The recognition event is not retained, so Home Assistant doesn't receive
+an old recognition again after a restart or reconnect. Murdock removes a
+retained copy left by 0.13.0 or earlier when it connects.
 
 Inbound context topics **must** be published with `retain: true` so
 Murdock pulls the last known state immediately on (re)connect instead of
@@ -353,9 +350,9 @@ What it adds over MQTT alone:
 
 Docker-compose users skip step 2 — port 8099 is already published.
 
-Upgrading from Murdock 0.13.0 or earlier: entries set up without a token
-show a re-authenticate prompt under Settings → Devices & Services;
-paste the token there. Recognitions over MQTT keep arriving meanwhile.
+When upgrading from 0.13.0 or earlier, existing entries show a
+re-authenticate prompt under Settings → Devices & Services for the
+token. Recognitions over MQTT keep working in the meantime.
 
 ## Configuration
 
@@ -368,7 +365,7 @@ first start (docker-compose deployment).
 | `LISTEN_URI` | `tcp://0.0.0.0:10350` | Wyoming proxy bind address |
 | `UPSTREAM_URI` | `tcp://localhost:10300` | Upstream STT engine |
 | `WEB_PORT` | `8099` | Web UI port |
-| `API_TOKEN` | generated | Pins the web API token; otherwise a random one is kept in `<data dir>/api_token` |
+| `API_TOKEN` | generated | Web API token; if unset, a random one is stored in `<data dir>/api_token` |
 | `VERIFY_THRESHOLD` | `0.30` | Max cosine distance to accept a match |
 | `ADVERTISED_LANGUAGES` | — | Force languages in Wyoming Info (e.g. `de,en`) |
 | `LOG_LEVEL` | `info` | `debug` / `info` / `warning` / `error` |
@@ -379,26 +376,23 @@ TV entity — live in the UI and survive restarts.
 
 ## Security
 
-The web UI and REST API can read and change everything — the backup
-alone contains the Home Assistant token, the MQTT password and every
-speech-to-text API key. A request is let in only for one of these:
+The web UI and REST API give full access, including the backup with the
+Home Assistant token, MQTT password and speech-to-text API keys. A
+request is accepted if it comes from:
 
-- Home Assistant ingress (add-on panel): Home Assistant has already
-  signed in an admin. Recognised by the Supervisor's ingress proxy
-  address, and only when running as an add-on.
-- The API token as `Authorization: Bearer <token>`: the custom
-  integration, scripts, `curl`.
-- A signed-in browser: on direct port access the UI asks for the
-  token once and keeps an `HttpOnly`, `SameSite=Strict` session cookie.
-  Requests that change something additionally need a header only the
-  UI sends, so another web page can't act on that session.
+- Home Assistant ingress (the add-on panel). Only when running as an
+  add-on, identified by the Supervisor's ingress proxy address.
+- A client sending the API token as `Authorization: Bearer <token>`,
+  such as the integration or a script.
+- A browser that signed in with the token. It gets an `HttpOnly`,
+  `SameSite=Strict` session cookie; requests that change something also
+  need a header only the UI sends.
 
-The token is generated on first start and stored in `<data dir>/api_token`
-(`./data/api_token` with docker compose), or pinned with `API_TOKEN`. The
-UI shows it under Settings → Home Assistant → API access, where it can
-also be regenerated. There is no CORS: nothing on another origin can read
-API responses. Only `/api/health` (for container health checks) and the
-sign-in page are public.
+The token is generated on first start into `<data dir>/api_token`
+(`./data/api_token` with docker compose) or set with `API_TOKEN`. The web
+UI shows it under Settings → Home Assistant → API access and can
+regenerate it. There is no CORS, and only `/api/health` and the sign-in
+page are public.
 
 ## Project layout
 

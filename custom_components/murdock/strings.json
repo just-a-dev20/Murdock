@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to Murdock",
-        "description": "Address of the Murdock proxy. The add-on serves it on port 8099 — publish that port under the add-on's Network options first. Murdock 0.14 and later also need the API token from Murdock's web UI: Settings → Home Assistant → API access.",
+        "description": "Address of the Murdock proxy. The add-on serves it on port 8099 — publish that port under the add-on's Network options first. The API token is shown in Murdock's web UI under Settings → Home Assistant → API access.",
         "data": {
           "base_url": "Base URL",
           "token": "API token"
@@ -29,7 +29,7 @@
       },
       "reauth_confirm": {
         "title": "Murdock needs its API token",
-        "description": "Murdock at {url} refused the stored token — it is missing (set up before Murdock required one) or was regenerated. Copy the token from Murdock's web UI: Settings → Home Assistant → API access.",
+        "description": "Murdock at {url} refused the stored token. Enter the token from Murdock's web UI (Settings → Home Assistant → API access).",
         "data": {
           "token": "API token"
         }
@@ -37,11 +37,11 @@
     },
     "error": {
       "cannot_connect": "Could not reach Murdock at this address.",
-      "invalid_auth": "Murdock refused the token. Copy it from Murdock's web UI: Settings → Home Assistant → API access."
+      "invalid_auth": "Murdock refused the token. It is shown in Murdock's web UI under Settings → Home Assistant → API access."
     },
     "abort": {
       "already_configured": "This Murdock instance is already configured.",
-      "reauth_successful": "The new token works — Murdock is connected again.",
+      "reauth_successful": "Re-authentication was successful.",
       "reauth_failed": "This Murdock entry no longer exists."
     }
   },

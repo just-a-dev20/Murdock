@@ -49,6 +49,8 @@ VIA_INGRESS = "ingress"
 VIA_TOKEN = "token"
 VIA_SESSION = "session"
 
+MISSING_UI_HEADER = "missing X-Murdock-UI header"
+
 
 def _under_supervisor() -> bool:
     return bool(os.environ.get("SUPERVISOR_TOKEN"))
@@ -127,8 +129,7 @@ class ApiAuth:
         _write_private(self._path, token + "\n")
         self._token = token
         _LOGGER.warning(
-            "API token rotated — the Home Assistant integration and other "
-            "clients need the new one"
+            "API token rotated; clients using the old token need the new one"
         )
         return token
 
@@ -168,7 +169,7 @@ class ApiAuth:
         ):
             if scope.get("method", "GET") in _SAFE_METHODS or headers.get(UI_HEADER):
                 return VIA_SESSION, None
-            return None, "missing X-Murdock-UI header"
+            return None, MISSING_UI_HEADER
         return None, "authentication required"
 
 
@@ -215,7 +216,7 @@ class AuthMiddleware:
         if scope["type"] == "websocket":
             await send({"type": "websocket.close", "code": 1008})
             return
-        status = 403 if why == "missing X-Murdock-UI header" else 401
+        status = 403 if why == MISSING_UI_HEADER else 401
         body = json.dumps({"detail": why}).encode("utf-8")
         headers = [
             (b"content-type", b"application/json"),

@@ -4,69 +4,65 @@
 
 ### The web API needs a token
 
-The web UI and REST API answered anybody who could reach port 8099, and
-a wildcard CORS header let any web page you happened to open read the
-answers — the backup included, which carries the Home Assistant token,
-the MQTT password and every speech-to-text API key.
+The web UI and REST API answered anyone who could reach port 8099, and a
+wildcard CORS header let any web page read the responses. That included
+the backup, which contains the Home Assistant token, the MQTT password
+and the speech-to-text API keys.
 
-Now a request needs one of:
+A request now needs one of:
 
-- Home Assistant ingress: the add-on panel works as before, no
-  sign-in (Home Assistant has already signed in an admin).
-- The API token as `Authorization: Bearer …`: the integration,
-  scripts, curl.
-- A signed-in browser: direct access on port 8099 asks for the token
-  once and keeps an HttpOnly, SameSite=Strict session cookie. Changes
-  additionally need a header only the UI sends, so another web page
-  can't use the session.
+- Home Assistant ingress. The add-on panel works as before, without
+  signing in.
+- The API token as `Authorization: Bearer …` (integration, scripts,
+  curl).
+- A browser session. Direct access on port 8099 asks for the token once
+  and sets an HttpOnly, SameSite=Strict cookie. Requests that change
+  something also need a header only the UI sends.
 
 The token is generated on first start into `<data dir>/api_token`
-(`./data/api_token` with docker compose) or pinned with `API_TOKEN`. The
-UI shows it under Settings → Home Assistant → API access, with copy
-and regenerate. The CORS middleware is gone — nothing legitimately
-needed it. `/api/health` stays public for container health checks.
+(`./data/api_token` with docker compose), or set with `API_TOKEN`. The
+web UI shows it under Settings → Home Assistant → API access, where it
+can also be regenerated. The CORS middleware is removed. `/api/health`
+stays public for container health checks.
 
-Update the integration to 0.5.0 along with the add-on. It needs the
-token: existing entries show a re-authenticate prompt under
-Settings → Devices & Services; paste the token there. Recognitions over
-MQTT keep arriving in the meantime. (Integration 0.4.0 has no way to add
-a token to an existing entry short of removing and re-adding it.)
+Update the integration to 0.5.0 together with the add-on. Existing
+entries show a re-authenticate prompt under Settings → Devices &
+Services to enter the token; recognitions over MQTT keep working in the
+meantime. With integration 0.4.0 the only way to add a token is to
+remove and re-add the entry.
 
-### No more stale speaker after Home Assistant restarts
+### No stale speaker after Home Assistant restarts
 
-The JSON recognition event on `murdock/event/recognition` was published
-retained. The broker hands a retained message to every new subscriber, so
-each time Home Assistant restarted or its MQTT connection came back, the
-integration received the last recognition again — possibly hours old —
-and stored it as if it had just happened. Within the freshness window
-the conversation agent was then told that speaker, possibly an admin,
-was talking.
+The recognition event on `murdock/event/recognition` was published
+retained. The broker sends retained messages to every new subscriber, so
+after each Home Assistant restart or MQTT reconnect the integration
+received the last recognition again and stored it with the current
+time. For the length of the freshness window the conversation agent was
+told that this speaker was talking.
 
-The event is no longer retained (the sensor states still are), a
-retained copy left on the broker by an older version is removed when
-Murdock connects, and the integration ignores retained events.
+The event is no longer retained (sensor states still are). Murdock
+removes a retained copy left by an older version when it connects, and
+the integration ignores retained events.
 
-### Cloud engines hear the whole utterance
+### Cloud engines get the whole utterance
 
-The buffered engines — OpenAI-compatible, Voxtral, Home Assistant Cloud —
-were given the speaker embedder's copy of the audio: the first second cut
-off (the chime trim, "Skip leading seconds") and, with speaker extraction
-on, every speech region extraction dropped. Words at the start, and short
-words between pauses, went missing from the transcript. The trim and
-extraction now apply to the embedding only; transcripts and shadow
-comparisons get what the microphone sent. The streaming Wyoming path was
-not affected.
+The buffered engines (OpenAI-compatible, Voxtral, Home Assistant Cloud)
+received the speaker embedder's copy of the audio: the first second
+trimmed for the chime ("Skip leading seconds") and, with extraction on,
+without the speech regions extraction dropped. Words at the start and
+short words between pauses were missing from transcripts. Trimming and
+extraction now apply to the embedding only. The streaming Wyoming path
+was not affected.
 
-### Extraction can't be used to slip a command past the gate
+### Extraction no longer vouches for someone else's command
 
-Speaker extraction keeps only the dominant enrolled voice's speech for
-the verify gate, but the transcript always covers the whole clip. So an
-enrolled user saying one short word ("yes") next to an unknown voice's
-command got the command through the gate — and to the agent — under that
-user's name. Extraction now only narrows the clip when the matched speaker
-said more than half of the detected speech; otherwise the clip is judged
-as a whole, exactly as with extraction switched off. The log says when
-this happens ("EXTRACTION declined: … spoke only 23% of the speech").
+Extraction keeps only the dominant enrolled speaker's regions for the
+verify gate, but the transcript covers the whole clip. An enrolled user
+saying one short word next to an unknown voice's command therefore got
+the command through the gate under their name. Extraction now only
+narrows the clip when the matched speaker said more than half of the
+detected speech; otherwise the clip is judged as a whole, as with
+extraction off. The log shows `EXTRACTION declined` when this happens.
 
 ## 0.13.0
 

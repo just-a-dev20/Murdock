@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Mit Murdock verbinden",
-        "description": "Adresse des Murdock-Proxys. Das Add-on stellt ihn auf Port 8099 bereit — gib den Port zuvor in den Netzwerk-Optionen des Add-ons frei. Murdock ab 0.14 braucht außerdem das API-Token aus Murdocks Weboberfläche: Einstellungen → Home Assistant → API-Zugang.",
+        "description": "Adresse des Murdock-Proxys. Das Add-on stellt ihn auf Port 8099 bereit — gib den Port zuvor in den Netzwerk-Optionen des Add-ons frei. Das API-Token steht in Murdocks Weboberfläche unter Einstellungen → Home Assistant → API-Zugang.",
         "data": {
           "base_url": "Basis-URL",
           "token": "API-Token"
@@ -29,7 +29,7 @@
       },
       "reauth_confirm": {
         "title": "Murdock braucht sein API-Token",
-        "description": "Murdock unter {url} hat das gespeicherte Token abgelehnt — es fehlt (eingerichtet, bevor Murdock eines verlangte) oder wurde neu erzeugt. Das Token aus Murdocks Weboberfläche kopieren: Einstellungen → Home Assistant → API-Zugang.",
+        "description": "Murdock unter {url} hat das gespeicherte Token abgelehnt. Bitte das Token aus Murdocks Weboberfläche eingeben (Einstellungen → Home Assistant → API-Zugang).",
         "data": {
           "token": "API-Token"
         }
@@ -37,11 +37,11 @@
     },
     "error": {
       "cannot_connect": "Murdock ist unter dieser Adresse nicht erreichbar.",
-      "invalid_auth": "Murdock hat das Token abgelehnt. Es steht in Murdocks Weboberfläche: Einstellungen → Home Assistant → API-Zugang."
+      "invalid_auth": "Murdock hat das Token abgelehnt. Es steht in Murdocks Weboberfläche unter Einstellungen → Home Assistant → API-Zugang."
     },
     "abort": {
       "already_configured": "Diese Murdock-Instanz ist bereits eingerichtet.",
-      "reauth_successful": "Das neue Token funktioniert — Murdock ist wieder verbunden.",
+      "reauth_successful": "Die erneute Authentifizierung war erfolgreich.",
       "reauth_failed": "Dieser Murdock-Eintrag existiert nicht mehr."
     }
   },

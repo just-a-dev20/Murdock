@@ -46,11 +46,11 @@
                 <button type="submit" data-i18n="auth.login_btn">Sign in</button>
             </form>
             <p class="meta" data-i18n-html="auth.login_where">
-                Where to find it: in the file <code>api_token</code> in Murdock's
-                data directory (e.g. <code>./data/api_token</code> with
-                docker compose), or the value of <code>API_TOKEN</code> if you
-                set one. As a Home Assistant add-on, open Murdock from the
-                sidebar instead — no token needed there.
+                The token is in the file <code>api_token</code> in Murdock's
+                data directory (<code>./data/api_token</code> with docker
+                compose), or in <code>API_TOKEN</code> if you set it. In the
+                Home Assistant add-on, open Murdock from the sidebar instead;
+                no token is needed there.
             </p>
             <div id="login-feedback" class="meta"></div>
         </div>
@@ -685,11 +685,10 @@
             <div class="card" id="api-access-card">
                 <h2 data-i18n="auth.card_title">API access (Home Assistant integration)</h2>
                 <p class="meta" data-i18n="auth.card_description">
-                    The Murdock integration in Home Assistant, scripts and
-                    anything else using the web API need this token. Paste it
-                    into the integration's Token field. Keep it secret: it
-                    unlocks everything here, including the backup and its
-                    stored credentials.
+                    The Home Assistant integration and other API clients need
+                    this token; paste it into the integration's token field.
+                    Keep it secret: it gives full access, including the backup
+                    with its stored credentials.
                 </p>
                 <div class="row">
                     <input type="password" id="api-token-value" readonly autocomplete="off"
@@ -698,7 +697,7 @@
                     <button type="button" id="api-token-copy" class="secondary" data-i18n="auth.copy">Copy</button>
                 </div>
                 <p class="meta" id="api-token-pinned" hidden data-i18n="auth.pinned">
-                    Set by the API_TOKEN environment variable — change it there.
+                    Set by the API_TOKEN environment variable.
                 </p>
                 <div class="row">
                     <button type="button" id="api-token-rotate" class="danger" data-i18n="auth.rotate">Generate new token</button>
